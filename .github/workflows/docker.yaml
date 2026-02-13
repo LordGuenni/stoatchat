@@ -5,10 +5,7 @@ on:
     tags:
       - "*"
     branches:
-      - "voice-server-broadcast"
-  pull_request:
-    paths:
-      - "Dockerfile"
+      - "main"
   workflow_dispatch:
 
 permissions:
@@ -19,205 +16,245 @@ concurrency:
   group: ${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
+env:
+  REGISTRY: ghcr.io/lordguenni
+
 jobs:
-  base:
-    name: Test base image build
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+  # Build base image natively on each architecture
+  build-base:
+    name: Build base (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux/amd64
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
     steps:
-      # Configure build environment
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
-      # Build the image
-      - name: Build base image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: false
-          platforms: linux/amd64,linux/arm64
-          tags: ghcr.io/lordguenni/base:latest
-          cache-from: type=gha,scope=buildx-base-multi-arch
-          cache-to: type=gha,scope=buildx-base-multi-arch,mode=max
-
-  publish:
-    runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
-    name: Publish Docker images
-    steps:
-      # Configure build environment
-      - name: Checkout
-        uses: actions/checkout@v3
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      # Authenticate with Docker Hub and GHCR
-      - name: Login to Github Container Registry
-        uses: docker/login-action@v2
+      - name: Login to GHCR
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Build the image
-      - name: Build base image
-        uses: docker/build-push-action@v4
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: ghcr.io/lordguenni/base:latest
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.REGISTRY }}/base,push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=base-${{ matrix.arch }}
+          cache-to: type=gha,scope=base-${{ matrix.arch }},mode=max
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: base-digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Merge per-arch base images into a multi-arch manifest
+  merge-base:
+    name: Merge base manifest
+    runs-on: ubuntu-latest
+    needs: build-base
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: base-digest-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create manifest and push
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create -t ${{ env.REGISTRY }}/base:latest \
+            $(printf '${{ env.REGISTRY }}/base@sha256:%s ' *)
+
+  # Publish service images (fast — just copies binaries from base)
+  publish:
+    name: Publish service images
+    runs-on: ubuntu-latest
+    needs: merge-base
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       # stoatchat/api
-      - name: Docker meta
+      - name: Docker meta (api)
         id: meta-delta
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
-          images: |
-            ghcr.io/lordguenni/api
-      - name: Publish
-        uses: docker/build-push-action@v4
+          images: ${{ env.REGISTRY }}/api
+      - name: Publish api
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
           file: crates/delta/Dockerfile
           tags: ${{ steps.meta-delta.outputs.tags }}
-          build-args: |
-            BASE_IMAGE=ghcr.io/lordguenni/base:latest
+          build-args: BASE_IMAGE=${{ env.REGISTRY }}/base:latest
           labels: ${{ steps.meta-delta.outputs.labels }}
 
       # stoatchat/events
-      - name: Docker meta
+      - name: Docker meta (events)
         id: meta-bonfire
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
-          images: |
-            ghcr.io/lordguenni/events
-      - name: Publish
-        uses: docker/build-push-action@v4
+          images: ${{ env.REGISTRY }}/events
+      - name: Publish events
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
           file: crates/bonfire/Dockerfile
           tags: ${{ steps.meta-bonfire.outputs.tags }}
-          build-args: |
-            BASE_IMAGE=ghcr.io/lordguenni/base:latest
+          build-args: BASE_IMAGE=${{ env.REGISTRY }}/base:latest
           labels: ${{ steps.meta-bonfire.outputs.labels }}
 
       # stoatchat/file-server
-      - name: Docker meta
+      - name: Docker meta (file-server)
         id: meta-autumn
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
-          images: |
-            ghcr.io/lordguenni/file-server
-      - name: Publish
-        uses: docker/build-push-action@v4
+          images: ${{ env.REGISTRY }}/file-server
+      - name: Publish file-server
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
           file: crates/services/autumn/Dockerfile
           tags: ${{ steps.meta-autumn.outputs.tags }}
-          build-args: |
-            BASE_IMAGE=ghcr.io/lordguenni/base:latest
+          build-args: BASE_IMAGE=${{ env.REGISTRY }}/base:latest
           labels: ${{ steps.meta-autumn.outputs.labels }}
 
       # stoatchat/proxy
-      - name: Docker meta
+      - name: Docker meta (proxy)
         id: meta-january
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
-          images: |
-            ghcr.io/lordguenni/proxy
-      - name: Publish
-        uses: docker/build-push-action@v4
+          images: ${{ env.REGISTRY }}/proxy
+      - name: Publish proxy
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
           file: crates/services/january/Dockerfile
           tags: ${{ steps.meta-january.outputs.tags }}
-          build-args: |
-            BASE_IMAGE=ghcr.io/lordguenni/base:latest
+          build-args: BASE_IMAGE=${{ env.REGISTRY }}/base:latest
           labels: ${{ steps.meta-january.outputs.labels }}
 
       # stoatchat/gifbox
-      - name: Docker meta
+      - name: Docker meta (gifbox)
         id: meta-gifbox
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
-          images: |
-            ghcr.io/lordguenni/gifbox
-      - name: Publish
-        uses: docker/build-push-action@v4
+          images: ${{ env.REGISTRY }}/gifbox
+      - name: Publish gifbox
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
           file: crates/services/gifbox/Dockerfile
           tags: ${{ steps.meta-gifbox.outputs.tags }}
-          build-args: |
-            BASE_IMAGE=ghcr.io/lordguenni/base:latest
+          build-args: BASE_IMAGE=${{ env.REGISTRY }}/base:latest
           labels: ${{ steps.meta-gifbox.outputs.labels }}
 
       # stoatchat/crond
-      - name: Docker meta
+      - name: Docker meta (crond)
         id: meta-crond
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
-          images: |
-            ghcr.io/lordguenni/crond
-      - name: Publish
-        uses: docker/build-push-action@v4
+          images: ${{ env.REGISTRY }}/crond
+      - name: Publish crond
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
           file: crates/daemons/crond/Dockerfile
           tags: ${{ steps.meta-crond.outputs.tags }}
-          build-args: |
-            BASE_IMAGE=ghcr.io/lordguenni/base:latest
+          build-args: BASE_IMAGE=${{ env.REGISTRY }}/base:latest
           labels: ${{ steps.meta-crond.outputs.labels }}
 
       # stoatchat/pushd
-      - name: Docker meta
+      - name: Docker meta (pushd)
         id: meta-pushd
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
-          images: |
-            ghcr.io/lordguenni/pushd
-      - name: Publish
-        uses: docker/build-push-action@v4
+          images: ${{ env.REGISTRY }}/pushd
+      - name: Publish pushd
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
           file: crates/daemons/pushd/Dockerfile
           tags: ${{ steps.meta-pushd.outputs.tags }}
-          build-args: |
-            BASE_IMAGE=ghcr.io/lordguenni/base:latest
+          build-args: BASE_IMAGE=${{ env.REGISTRY }}/base:latest
           labels: ${{ steps.meta-pushd.outputs.labels }}
 
       # stoatchat/voice-ingress
-      - name: Docker meta
+      - name: Docker meta (voice-ingress)
         id: meta-voice-ingress
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
-          images: |
-            ghcr.io/lordguenni/voice-ingress
-      - name: Publish
-        uses: docker/build-push-action@v4
+          images: ${{ env.REGISTRY }}/voice-ingress
+      - name: Publish voice-ingress
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
           file: crates/daemons/voice-ingress/Dockerfile
           tags: ${{ steps.meta-voice-ingress.outputs.tags }}
-          build-args: |
-            BASE_IMAGE=ghcr.io/lordguenni/base:latest
+          build-args: BASE_IMAGE=${{ env.REGISTRY }}/base:latest
           labels: ${{ steps.meta-voice-ingress.outputs.labels }}
