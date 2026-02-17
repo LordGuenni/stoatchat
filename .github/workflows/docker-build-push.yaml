@@ -46,7 +46,6 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           context: .
-          target: base
           push: ${{ github.event_name != 'pull_request' }}
           platforms: linux/amd64,linux/arm64
           tags: ghcr.io/${{ env.REPO_OWNER }}/stoatchat-base:latest
@@ -61,8 +60,8 @@ jobs:
       - name: Build API
         uses: docker/build-push-action@v4
         with:
-          context: .
-          target: api
+          context: ./crates/services/api
+          file: ./crates/services/api/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta-api.outputs.tags }}
@@ -77,8 +76,8 @@ jobs:
       - name: Build Events
         uses: docker/build-push-action@v4
         with:
-          context: .
-          target: events
+          context: ./crates/services/events
+          file: ./crates/services/events/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta-events.outputs.tags }}
@@ -93,8 +92,8 @@ jobs:
       - name: Build File Server
         uses: docker/build-push-action@v4
         with:
-          context: .
-          target: file-server
+          context: ./crates/services/file-server
+          file: ./crates/services/file-server/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta-file-server.outputs.tags }}
@@ -109,8 +108,8 @@ jobs:
       - name: Build Proxy
         uses: docker/build-push-action@v4
         with:
-          context: .
-          target: proxy
+          context: ./crates/services/proxy
+          file: ./crates/services/proxy/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta-proxy.outputs.tags }}
@@ -125,8 +124,8 @@ jobs:
       - name: Build Gifbox
         uses: docker/build-push-action@v4
         with:
-          context: .
-          target: gifbox
+          context: ./crates/services/gifbox
+          file: ./crates/services/gifbox/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta-gifbox.outputs.tags }}
@@ -141,8 +140,8 @@ jobs:
       - name: Build Crond
         uses: docker/build-push-action@v4
         with:
-          context: .
-          target: crond
+          context: ./crates/daemons/crond
+          file: ./crates/daemons/crond/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta-crond.outputs.tags }}
@@ -157,8 +156,8 @@ jobs:
       - name: Build Pushd
         uses: docker/build-push-action@v4
         with:
-          context: .
-          target: pushd
+          context: ./crates/daemons/pushd
+          file: ./crates/daemons/pushd/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta-pushd.outputs.tags }}
@@ -173,8 +172,8 @@ jobs:
       - name: Build Voice Ingress
         uses: docker/build-push-action@v4
         with:
-          context: .
-          target: voice-ingress
+          context: ./crates/daemons/voice-ingress
+          file: ./crates/daemons/voice-ingress/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta-voice-ingress.outputs.tags }}
