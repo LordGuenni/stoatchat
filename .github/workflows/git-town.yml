@@ -1,8 +1,8 @@
 name: Git Town
 
 on:
-  pull_request:
-
+  #pull_request:
+  workflow_dispatch:
 jobs:
   git-town:
     name: Display the branch stack

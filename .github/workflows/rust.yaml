@@ -1,9 +1,10 @@
 name: Rust build, test, and generate specification
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
+  #push:
+  #  branches: [main]
+  #pull_request:
 
 concurrency:
   group: ${{ github.head_ref || github.ref }}

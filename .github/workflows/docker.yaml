@@ -1,12 +1,12 @@
 name: Docker Test & Publish
 
 on:
-  push:
-    tags:
-      - "*"
-  pull_request:
-    paths:
-      - "Dockerfile"
+  #push:
+  #  tags:
+  #    - "*"
+  #pull_request:
+  #  paths:
+  #    - "Dockerfile"
   workflow_dispatch:
 
 permissions:
