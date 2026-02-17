@@ -60,8 +60,8 @@ jobs:
       - name: Build API
         uses: docker/build-push-action@v4
         with:
-          context: ./crates/services/api
-          file: ./crates/services/api/Dockerfile
+          context: ./crates/delta
+          file: ./crates/delta/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta-api.outputs.tags }}
@@ -76,8 +76,8 @@ jobs:
       - name: Build Events
         uses: docker/build-push-action@v4
         with:
-          context: ./crates/services/events
-          file: ./crates/services/events/Dockerfile
+          context: ./crates/bonfire
+          file: ./crates/bonfire/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta-events.outputs.tags }}
@@ -92,8 +92,8 @@ jobs:
       - name: Build File Server
         uses: docker/build-push-action@v4
         with:
-          context: ./crates/services/file-server
-          file: ./crates/services/file-server/Dockerfile
+          context: ./crates/services/autumn
+          file: ./crates/services/autumn/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta-file-server.outputs.tags }}
