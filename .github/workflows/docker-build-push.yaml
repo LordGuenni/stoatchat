@@ -108,8 +108,8 @@ jobs:
       - name: Build Proxy
         uses: docker/build-push-action@v4
         with:
-          context: ./crates/services/proxy
-          file: ./crates/services/proxy/Dockerfile
+          context: ./crates/services/january
+          file: ./crates/services/january/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta-proxy.outputs.tags }}
